@@ -8,6 +8,7 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_text
 
 from rest_framework import response, status, authtoken
+from rest_framework_jwt.settings import api_settings
 
 from . import settings
 
@@ -39,11 +40,16 @@ class ActionViewMixin(object):
         return self._action(serializer)
 
 
+jwt_payload_handler = api_settings.JWT_PAYLOAD_HANDLER
+jwt_encode_handler = api_settings.JWT_ENCODE_HANDLER
+
+
 class UserEmailFactoryBase(object):
     token_generator = default_token_generator
     subject_template_name = None
     plain_body_template_name = None
     html_body_template_name = None
+
 
     def __init__(self, from_email, user, protocol, domain, site_name):
         self.from_email = from_email
@@ -51,6 +57,7 @@ class UserEmailFactoryBase(object):
         self.domain = domain
         self.site_name = site_name
         self.protocol = protocol
+        self.payload = jwt_payload_handler(user)
 
     @classmethod
     def from_request(cls, request, user=None, from_email=None):
@@ -88,6 +95,7 @@ class UserEmailFactoryBase(object):
             'site_name': self.site_name,
             'uid': encode_uid(self.user.pk),
             'token': self.token_generator.make_token(self.user),
+            'jwt_token': jwt_encode_handler(self.payload),
             'protocol': self.protocol,
         }
 
