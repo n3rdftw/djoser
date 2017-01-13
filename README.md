@@ -92,7 +92,7 @@ REST_FRAMEWORK = {
 }
 ```
 
-Run migrations – this step will create tables for `auth` app:
+Run migrations - this step will create tables for `auth` app:
 
     $ ./manage.py migrate
 
@@ -132,7 +132,7 @@ REST_FRAMEWORK = {
 }
 ```
 
-Run migrations – this step will create tables for `auth` and `authtoken` apps:
+Run migrations - this step will create tables for `auth` and `authtoken` apps:
 
     $ ./manage.py migrate
 
@@ -150,7 +150,7 @@ urlpatterns = [
     url(r'^auth/login', rest_framework_jwt.views.obtain_jwt_token),  # using JSON web token
     url(r'^auth/register', djoser.views.RegistrationView.as_view()),
     url(r'^auth/password/reset', djoser.views.PasswordResetView.as_view()),
-    url(r'^auth/password/confirm', djoser.views.PasswordResetConfirmView.as_view()),
+    url(r'^auth/password/reset/confirm', djoser.views.PasswordResetConfirmView.as_view()),
     ...
 ]
 ```
@@ -643,7 +643,7 @@ Define custom view/serializer (inherit from one of `djoser` class) and override 
 ```python
 class CustomRegistrationView(djoser.views.RegistrationView):
 
-    def send_email(self, *args, **kwargs):
+    def send_activation_email(self, *args, **kwargs):
         your_custom_email_sender(*args, **kwargs)
 ```
 
@@ -653,7 +653,7 @@ You could check `djoser` API in source code:
 * [djoser.serializers](https://github.com/sunscrapers/djoser/blob/master/djoser/serializers.py)
 
 
-## Development
+## Contributing and development
 
 To start developing on **djoser**, clone the repository:
 
@@ -661,11 +661,15 @@ To start developing on **djoser**, clone the repository:
 
 In order to run the tests create virtualenv, go to repo directory and then:
 
-`$ pip install -r requirements-test.txt`
+`$ pip install django djangorestframework`
+
+`$ pip install -r requirements.txt`
+
+If you are running djoser tests on Python 2.7 you also need to install `mock` library.
+
+`$ pip install mock  # only on Python 2.7`
 
 `$ cd testproject`
-
-`$ ./manage.py migrate`
 
 `$ ./manage.py test`
 
@@ -674,6 +678,12 @@ If you need to run tests against all supported Python and Django versions then i
 `$ pip install tox`
 
 `$ tox`
+
+You can also play with test project by running following commands:
+
+`$ ./manage.py migrate`
+
+`$ ./manage.py runserver`
 
 ## Similar projects
 

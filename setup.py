@@ -1,13 +1,15 @@
 #!/usr/bin/env python
 
 import os
+from io import open
 from setuptools import setup
+
 
 try:
     import pypandoc
     description = pypandoc.convert('README.md', 'rst')
 except (IOError, ImportError):
-    description = open('README.md').read()
+    description = open('README.md', encoding='utf-8').read()
 
 
 def get_packages(package):
@@ -16,20 +18,16 @@ def get_packages(package):
             if os.path.exists(os.path.join(dirpath, '__init__.py'))]
 
 
-def get_requirements(file_name):
-    return [i.strip() for i in open(file_name).readlines()]
-
-
 setup(
     name='djoser',
-    version='0.5.1',
+    version='0.5.2',
     packages=get_packages('djoser'),
     license='MIT',
     author='SUNSCRAPERS',
     description='REST version of Django authentication system.',
     author_email='info@sunscrapers.com',
     long_description=description,
-    install_requires=get_requirements('requirements.txt'),
+    install_requires=[],
     include_package_data=True,
     url='https://github.com/sunscrapers/djoser',
     classifiers=[
