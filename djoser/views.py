@@ -63,11 +63,13 @@ class RegistrationView(generics.CreateAPIView):
 
     def send_activation_email(self, user):
         email_factory = utils.UserActivationEmailFactory.from_request(self.request, user=user)
+        email_factory.html_body_template_name = 'activation_email.html'
         email = email_factory.create()
         email.send()
 
     def send_confirmation_email(self, user):
         email_factory = utils.UserConfirmationEmailFactory.from_request(self.request, user=user)
+        email_factory.html_body_template_name = 'confirmation_email.html'
         email = email_factory.create()
         email.send()
 
@@ -135,6 +137,7 @@ class PasswordResetView(utils.ActionViewMixin, generics.GenericAPIView):
 
     def send_password_reset_email(self, user):
         email_factory = utils.UserPasswordResetEmailFactory.from_request(self.request, user=user)
+        email_factory.html_body_template_name = 'password_reset_email.html'
         email = email_factory.create()
         email.send()
 
@@ -200,6 +203,7 @@ class ActivationView(utils.ActionViewMixin, generics.GenericAPIView):
         if settings.get('SEND_CONFIRMATION_EMAIL'):
             email_factory = utils.UserConfirmationEmailFactory.from_request(
                 self.request, user=serializer.user)
+            email_factory.html_body_template_name = 'confirmation_email.html'
             email = email_factory.create()
             email.send()
         return Response(status=status.HTTP_204_NO_CONTENT)
