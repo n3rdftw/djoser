@@ -29,11 +29,12 @@ def login_user(request, user):
 
 def logout_user(request):
     authtoken.models.Token.objects.filter(user=request.user).delete()
-    user_logged_out.send(sender=request.user.__class__, request=request, user=request.user)
+    user_logged_out.send(
+        sender=request.user.__class__, request=request, user=request.user
+    )
 
 
 class ActionViewMixin(object):
-
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -50,46 +51,61 @@ class UserEmailFactoryBase(object):
     plain_body_template_name = None
     html_body_template_name = None
 
-
-    def __init__(self, from_email, user, protocol, domain, site_name):
+    def __init__(self, from_email, user, protocol, domain, site_name, **context):
         self.from_email = from_email
         self.user = user
         self.domain = domain
         self.site_name = site_name
         self.protocol = protocol
         self.payload = jwt_payload_handler(user)
+        self.context_data = context
 
     @classmethod
-    def from_request(cls, request, user=None, from_email=None):
+    def from_request(cls, request, user=None, from_email=None, **context):
         site = get_current_site(request)
+        from_email = from_email or getattr(
+            django_settings, 'DEFAULT_FROM_EMAIL', ''
+        )
+
         return cls(
-            from_email=getattr(django_settings, 'DEFAULT_FROM_EMAIL', from_email),
+            from_email=from_email,
             user=user or request.user,
             domain=django_settings.DJOSER.get('DOMAIN') or site.domain,
             site_name=django_settings.DJOSER.get('SITE_NAME') or site.name,
             protocol='https' if request.is_secure() else 'http',
+            **context
         )
 
-    def create(self,):
+    def create(self):
         assert self.plain_body_template_name or self.html_body_template_name
         context = self.get_context()
         subject = loader.render_to_string(self.subject_template_name, context)
         subject = ''.join(subject.splitlines())
 
         if self.plain_body_template_name:
-            plain_body = loader.render_to_string(self.plain_body_template_name, context)
-            email_message = EmailMultiAlternatives(subject, plain_body, self.from_email, [self.user.email])
+            plain_body = loader.render_to_string(
+                self.plain_body_template_name, context
+            )
+            email_message = EmailMultiAlternatives(
+                subject, plain_body, self.from_email, [self.user.email]
+            )
             if self.html_body_template_name:
-                html_body = loader.render_to_string(self.html_body_template_name, context)
+                html_body = loader.render_to_string(
+                    self.html_body_template_name, context
+                )
                 email_message.attach_alternative(html_body, 'text/html')
         else:
-            html_body = loader.render_to_string(self.html_body_template_name, context)
-            email_message = EmailMessage(subject, html_body, self.from_email, [self.user.email])
+            html_body = loader.render_to_string(
+                self.html_body_template_name, context
+            )
+            email_message = EmailMessage(
+                subject, html_body, self.from_email, [self.user.email]
+            )
             email_message.content_subtype = 'html'
         return email_message
 
     def get_context(self):
-        return {
+        context = {
             'user': self.user,
             'domain': self.domain,
             'site_name': self.site_name,
@@ -98,6 +114,8 @@ class UserEmailFactoryBase(object):
             'jwt_token': jwt_encode_handler(self.payload),
             'protocol': self.protocol,
         }
+        context.update(self.context_data)
+        return context
 
 
 class UserActivationEmailFactory(UserEmailFactoryBase):
@@ -116,7 +134,9 @@ class UserPasswordResetEmailFactory(UserEmailFactoryBase):
 
     def get_context(self):
         context = super(UserPasswordResetEmailFactory, self).get_context()
-        context['url'] = settings.get('PASSWORD_RESET_CONFIRM_URL').format(**context)
+        context['url'] = settings.get('PASSWORD_RESET_CONFIRM_URL').format(
+            **context
+        )
         return context
 
 
