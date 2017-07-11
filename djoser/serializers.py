@@ -1,56 +1,82 @@
 from django.contrib.auth import authenticate, get_user_model
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import six
 from django.utils.module_loading import import_string
 
 from rest_framework import exceptions, serializers
-from rest_framework.authtoken.models import Token
 
-from . import constants, utils, settings
+from djoser import constants, utils
+from djoser.compat import get_user_email, validate_password
+from djoser.conf import settings
 
 
 User = get_user_model()
 
 
 class UserSerializer(serializers.ModelSerializer):
-
     class Meta:
         model = User
         fields = tuple(User.REQUIRED_FIELDS) + (
             User._meta.pk.name,
             User.USERNAME_FIELD,
         )
-        read_only_fields = (
-            User.USERNAME_FIELD,
-        )
+        read_only_fields = (User.USERNAME_FIELD,)
+
+    def update(self, instance, validated_data):
+        email = get_user_email(instance)
+        with transaction.atomic():
+            instance = super(UserSerializer, self).update(instance, validated_data)
+            if settings.SEND_ACTIVATION_EMAIL and validated_data.get(settings.USER_EMAIL_FIELD_NAME) and email != get_user_email(instance):
+                instance.is_active = False
+                instance.save(update_fields=['is_active'])
+
+        return instance
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(style={'input_type': 'password'},
-                                     write_only=True,
-                                     validators=settings.get('PASSWORD_VALIDATORS'))
+    password = serializers.CharField(
+        style={'input_type': 'password'},
+        write_only=True
+    )
+
+    default_error_messages = {
+        'cannot_create_user': constants.CANNOT_CREATE_USER_ERROR,
+    }
 
     class Meta:
         model = User
         fields = tuple(User.REQUIRED_FIELDS) + (
-            User.USERNAME_FIELD,
-            User._meta.pk.name,
-            'password',
+            User.USERNAME_FIELD, User._meta.pk.name, 'password',
         )
 
+    def validate_password(self, value):
+        validate_password(value)
+        return value
+
     def create(self, validated_data):
-        if settings.get('SEND_ACTIVATION_EMAIL'):
-            with transaction.atomic():
-                user = User.objects.create_user(**validated_data)
+        try:
+            user = self.perform_create(validated_data)
+        except IntegrityError:
+            raise serializers.ValidationError(
+                self.error_messages['cannot_create_user']
+            )
+
+        return user
+
+    def perform_create(self, validated_data):
+        with transaction.atomic():
+            user = User.objects.create_user(**validated_data)
+            if settings.SEND_ACTIVATION_EMAIL:
                 user.is_active = False
                 user.save(update_fields=['is_active'])
-        else:
-            user = User.objects.create_user(**validated_data)
         return user
 
 
+
 class LoginSerializer(serializers.Serializer):
-    password = serializers.CharField(required=False, style={'input_type': 'password'})
+    password = serializers.CharField(
+        required=False, style={'input_type': 'password'}
+    )
 
     default_error_messages = {
         'inactive_account': constants.INACTIVE_ACCOUNT_ERROR,
@@ -63,13 +89,20 @@ class LoginSerializer(serializers.Serializer):
         self.fields[User.USERNAME_FIELD] = serializers.CharField(required=False)
 
     def validate(self, attrs):
-        self.user = authenticate(username=attrs.get(User.USERNAME_FIELD), password=attrs.get('password'))
+        self.user = authenticate(
+            username=attrs.get(User.USERNAME_FIELD),
+            password=attrs.get('password')
+        )
         if self.user:
             if not self.user.is_active:
-                raise serializers.ValidationError(self.error_messages['inactive_account'])
+                raise serializers.ValidationError(
+                    self.error_messages['inactive_account']
+                )
             return attrs
         else:
-            raise serializers.ValidationError(self.error_messages['invalid_credentials'])
+            raise serializers.ValidationError(
+                self.error_messages['invalid_credentials']
+            )
 
 
 class PasswordResetSerializer(serializers.Serializer):
@@ -80,8 +113,7 @@ class PasswordResetSerializer(serializers.Serializer):
     }
 
     def validate_email(self, value):
-        if settings.get('PASSWORD_RESET_SHOW_EMAIL_NOT_FOUND') and \
-                not self.context['view'].get_users(value):
+        if settings.PASSWORD_RESET_SHOW_EMAIL_NOT_FOUND and not self.context['view'].get_users(value):
             raise serializers.ValidationError(self.error_messages['email_not_found'])
         return value
 
@@ -123,8 +155,11 @@ class ActivationSerializer(UidAndTokenSerializer):
 
 
 class PasswordSerializer(serializers.Serializer):
-    new_password = serializers.CharField(style={'input_type': 'password'},
-                                         validators=settings.get('PASSWORD_VALIDATORS'))
+    new_password = serializers.CharField(style={'input_type': 'password'})
+
+    def validate_new_password(self, value):
+        validate_password(value)
+        return value
 
 
 class PasswordRetypeSerializer(PasswordSerializer):
@@ -206,7 +241,7 @@ class TokenSerializer(serializers.ModelSerializer):
     auth_token = serializers.CharField(source='key')
 
     class Meta:
-        model = Token
+        model = settings.TOKEN_MODEL
         fields = (
             'auth_token',
         )
@@ -214,21 +249,20 @@ class TokenSerializer(serializers.ModelSerializer):
 
 class SerializersManager(object):
     def __init__(self, serializer_confs):
-        self.serializers = serializer_confs.copy()
+        self.serializers = {}
+        for serializer_name, serializer in six.iteritems(serializer_confs.copy()):
+            if isinstance(serializer, six.string_types):
+                serializer = import_string(serializer)
+            self.serializers[serializer_name] = serializer
 
     def get(self, serializer_name):
         try:
-            if isinstance(self.serializers[serializer_name], six.string_types):
-                self.serializers[serializer_name] = self.load_serializer(
-                    self.serializers[serializer_name])
             return self.serializers[serializer_name]
         except KeyError:
             raise Exception("Try to use serializer name '%s' that is not one of: %s" % (
                 serializer_name,
-                tuple(settings.get('SERIALIZERS').keys())
+                tuple(settings.SERIALIZERS.keys())
             ))
 
-    def load_serializer(self, serializer_class):
-        return import_string(serializer_class)
 
-serializers_manager = SerializersManager(settings.get('SERIALIZERS'))
+serializers_manager = SerializersManager(settings.SERIALIZERS)

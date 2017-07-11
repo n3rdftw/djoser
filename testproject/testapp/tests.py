@@ -5,21 +5,20 @@ from django.conf import settings
 from django.contrib.auth import get_user_model, user_logged_in, user_login_failed, user_logged_out
 from django.contrib.auth.tokens import default_token_generator
 from django.core import mail
-from django.test.utils import override_settings
+from django.db import IntegrityError
 from django.test.testcases import SimpleTestCase
-
+from django.test.utils import override_settings
+from django.utils import six
+from django.utils.module_loading import import_string
 from djet import assertions, utils, restframework
-
 from rest_framework import status, authtoken
 from rest_framework.request import Request, override_method
 
-import djoser.views
 import djoser.constants
-import djoser.utils
-import djoser.signals
 import djoser.serializers
-
-from djoser.settings import merge_settings_dicts
+import djoser.signals
+import djoser.utils
+import djoser.views
 
 try:
     from unittest import mock
@@ -37,6 +36,10 @@ def create_user(**kwargs):
     user = get_user_model().objects.create_user(**data)
     user.raw_password = data['password']
     return user
+
+
+def perform_create_mock(x):
+    raise IntegrityError
 
 
 class RootViewTest(restframework.APIViewTestCase,
@@ -76,7 +79,9 @@ class RegistrationViewTest(restframework.APIViewTestCase,
         user = get_user_model().objects.get(username=data['username'])
         self.assertTrue(user.check_password(data['password']))
 
-    @override_settings(DJOSER=dict(settings.DJOSER, **{'SEND_ACTIVATION_EMAIL': True}))
+    @override_settings(
+        DJOSER=dict(settings.DJOSER, **{'SEND_ACTIVATION_EMAIL': True})
+    )
     def test_post_should_create_user_with_login_and_send_activation_email(self):
         data = {
             'username': 'john',
@@ -95,7 +100,9 @@ class RegistrationViewTest(restframework.APIViewTestCase,
         user = get_user_model().objects.get(username='john')
         self.assertFalse(user.is_active)
 
-    @override_settings(DJOSER=dict(settings.DJOSER, **{'SEND_CONFIRMATION_EMAIL': True}))
+    @override_settings(
+        DJOSER=dict(settings.DJOSER, **{'SEND_CONFIRMATION_EMAIL': True})
+    )
     def test_post_should_create_user_with_login_and_send_confirmation_email(self):
         data = {
             'username': 'john',
@@ -133,12 +140,32 @@ class RegistrationViewTest(restframework.APIViewTestCase,
             'password': '666',
             'csrftoken': 'asdf',
         }
-        request = self.factory.post(data=data)
 
+        request = self.factory.post(data=data)
         response = self.view(request)
 
         self.assert_status_equal(response, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data, {'password': ['Woops, 666 is not allowed.']})
+        self.assertEqual(
+            response.data,
+            {'password': ['Password 666 is not allowed.']}
+        )
+
+    @mock.patch('djoser.serializers.UserRegistrationSerializer.perform_create',
+                side_effect=perform_create_mock)
+    def test_post_should_return_400_for_integrity_error(self, perform_create):
+        data = {
+            'username': 'john',
+            'email': 'john@beatles.com',
+            'password': 'secret',
+        }
+
+        request = self.factory.post(data=data)
+        response = self.view(request)
+
+        self.assert_status_equal(response, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data, [djoser.constants.CANNOT_CREATE_USER_ERROR]
+        )
 
 
 class LoginViewTest(restframework.APIViewTestCase,
@@ -200,7 +227,10 @@ class LoginViewTest(restframework.APIViewTestCase,
         response = self.view(request)
 
         self.assert_status_equal(response, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data['non_field_errors'], [djoser.constants.INVALID_CREDENTIALS_ERROR])
+        self.assertEqual(
+            response.data['non_field_errors'],
+            [djoser.constants.INVALID_CREDENTIALS_ERROR]
+        )
         self.assertFalse(self.signal_sent)
 
     def test_post_should_not_login_if_invalid_credentials(self):
@@ -215,7 +245,10 @@ class LoginViewTest(restframework.APIViewTestCase,
         response = self.view(request)
 
         self.assert_status_equal(response, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data['non_field_errors'], [djoser.constants.INVALID_CREDENTIALS_ERROR])
+        self.assertEqual(
+            response.data['non_field_errors'],
+            [djoser.constants.INVALID_CREDENTIALS_ERROR]
+        )
         self.assertTrue(self.signal_sent)
 
     def test_post_should_not_login_if_empty_request(self):
@@ -225,7 +258,10 @@ class LoginViewTest(restframework.APIViewTestCase,
         response = self.view(request)
 
         self.assert_status_equal(response, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data['non_field_errors'], [djoser.constants.INVALID_CREDENTIALS_ERROR])
+        self.assertEqual(
+            response.data['non_field_errors'],
+            [djoser.constants.INVALID_CREDENTIALS_ERROR]
+        )
 
 
 class LogoutViewTest(restframework.APIViewTestCase,
@@ -406,7 +442,9 @@ class PasswordResetConfirmViewTest(restframework.APIViewTestCase,
         self.assert_status_equal(response, status.HTTP_400_BAD_REQUEST)
         self.assertIn('uid', response.data)
         self.assertEqual(len(response.data['uid']), 1)
-        self.assertEqual(response.data['uid'][0], djoser.constants.INVALID_UID_ERROR)
+        self.assertEqual(
+            response.data['uid'][0], djoser.constants.INVALID_UID_ERROR
+        )
 
     def test_post_should_not_set_new_password_if_user_does_not_exist(self):
         user = create_user()
@@ -436,11 +474,16 @@ class PasswordResetConfirmViewTest(restframework.APIViewTestCase,
         response = self.view(request)
 
         self.assert_status_equal(response, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data['non_field_errors'], [djoser.constants.INVALID_TOKEN_ERROR])
+        self.assertEqual(
+            response.data['non_field_errors'],
+            [djoser.constants.INVALID_TOKEN_ERROR]
+        )
         user = utils.refresh(user)
         self.assertFalse(user.check_password(data['new_password']))
 
-    @override_settings(DJOSER=dict(settings.DJOSER, **{'PASSWORD_RESET_CONFIRM_RETYPE': True}))
+    @override_settings(
+        DJOSER=dict(settings.DJOSER, **{'PASSWORD_RESET_CONFIRM_RETYPE': True})
+    )
     def test_post_should_not_set_new_password_if_password_mismatch(self):
         user = create_user()
         data = {
@@ -454,7 +497,10 @@ class PasswordResetConfirmViewTest(restframework.APIViewTestCase,
         response = self.view(request)
 
         self.assert_status_equal(response, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data['non_field_errors'], [djoser.constants.PASSWORD_MISMATCH_ERROR])
+        self.assertEqual(
+            response.data['non_field_errors'],
+            [djoser.constants.PASSWORD_MISMATCH_ERROR]
+        )
 
     @override_settings(DJOSER=dict(settings.DJOSER, **{'PASSWORD_RESET_CONFIRM_RETYPE': True}))
     def test_post_should_not_set_new_password_if_mismatch(self):
@@ -474,7 +520,9 @@ class PasswordResetConfirmViewTest(restframework.APIViewTestCase,
         user = utils.refresh(user)
         self.assertFalse(user.check_password(data['new_password']))
 
-    @override_settings(DJOSER=dict(settings.DJOSER, **{'PASSWORD_RESET_CONFIRM_RETYPE': True}))
+    @override_settings(
+        DJOSER=dict(settings.DJOSER, **{'PASSWORD_RESET_CONFIRM_RETYPE': True})
+    )
     def test_post_should_not_reset_if_fails_password_validation(self):
         user = create_user()
         data = {
@@ -487,7 +535,9 @@ class PasswordResetConfirmViewTest(restframework.APIViewTestCase,
         request = self.factory.post(data=data)
         response = self.view(request)
         self.assert_status_equal(response, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data, {'new_password': ['Woops, 666 is not allowed.']})
+        self.assertEqual(
+            response.data, {'new_password': ['Password 666 is not allowed.']}
+        )
 
 
 class ActivationViewTest(restframework.APIViewTestCase,
@@ -607,7 +657,7 @@ class SetPasswordViewTest(restframework.APIViewTestCase,
         user = utils.refresh(user)
         self.assertTrue(user.check_password(data['current_password']))
 
-    def test_post_should_not_set_new_password_if_fails_password_validation(self):
+    def test_post_should_not_set_new_password_if_fails_validation(self):
         user = create_user()
         data = {
             'new_password': '666',
@@ -619,7 +669,9 @@ class SetPasswordViewTest(restframework.APIViewTestCase,
         response = self.view(request)
 
         self.assert_status_equal(response, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data, {'new_password': ['Woops, 666 is not allowed.']})
+        self.assertEqual(
+            response.data, {'new_password': ['Password 666 is not allowed.']}
+        )
 
     @override_settings(DJOSER=dict(settings.DJOSER, **{'LOGOUT_ON_PASSWORD_CHANGE': True}))
     def test_post_should_logout_after_password_change(self):
@@ -719,6 +771,7 @@ class SetUsernameViewTest(restframework.APIViewTestCase,
 
 
 class UserViewTest(restframework.APIViewTestCase,
+                   assertions.EmailAssertionsMixin,
                    assertions.StatusCodeAssertionsMixin):
     view_class = djoser.views.UserView
 
@@ -745,6 +798,23 @@ class UserViewTest(restframework.APIViewTestCase,
         self.assert_status_equal(response, status.HTTP_200_OK)
         user = utils.refresh(user)
         self.assertEqual(data['email'], user.email)
+
+    @override_settings(DJOSER=dict(settings.DJOSER, **{'SEND_ACTIVATION_EMAIL': True}))
+    def test_put_should_update_user_email_and_send_activation_email(self):
+        user = create_user()
+        data = {
+            'email': 'ringo@beatles.com',
+        }
+        request = self.factory.put(user=user, data=data)
+
+        response = self.view(request)
+
+        self.assert_status_equal(response, status.HTTP_200_OK)
+        self.assert_emails_in_mailbox(1)
+        self.assert_email_exists(to=[data['email']])
+
+        user = get_user_model().objects.get(username='john')
+        self.assertFalse(user.is_active)
 
 
 class UserEmailFactoryBaseTest(SimpleTestCase):
@@ -790,35 +860,44 @@ class SerializersManagerTest(SimpleTestCase):
         serializer_class = serializers_manager.get('user')
         self.assertTrue(issubclass(serializer_class, djoser.serializers.UserSerializer))
 
-        with mock.patch.object(
-                djoser.serializers.SerializersManager, 'load_serializer') as load_serializer_mock:
+        with mock.patch('django.utils.module_loading.import_string') as import_string_mock:
             serializer_class = serializers_manager.get('user')
             self.assertTrue(issubclass(serializer_class, djoser.serializers.UserSerializer))
-            self.assertFalse(load_serializer_mock.called)
+            self.assertFalse(import_string_mock.called)
 
 
-class TestMergeSettingsDict(SimpleTestCase):
+class SettingsTestCase(SimpleTestCase):
 
-    def test_merge_in_key(self):
-        c = {1: {1: None}}
-        d = {1: {2: None}}
-        expected = {1: {1: None, 2: None}}
-        self.assertEqual(merge_settings_dicts(c, d), expected)
+    @override_settings()
+    def test_settings_should_be_default_if_no_djoser_attrib_in_django_settings(self):
+        from django.conf import settings as django_settings
+        from djoser.conf import settings as djoser_settings
+        from djoser.conf import default_settings
 
-    def test_merge_in_key_overwrite_sub_key(self):
-        c = {1: {1: None}}
-        d = {1: {2: None, 1: 'TEST'}}
-        expected = {1: {1: 'TEST', 2: None}}
-        self.assertEqual(merge_settings_dicts(c, d), expected)
+        del django_settings.DJOSER
 
-    def test_merge_in_key_overwrite_sub_key_overwrite_conflicts_false(self):
-        c = {1: {1: None}}
-        d = {1: {2: None, 1: 'TEST'}}
-        try:
-            merge_settings_dicts(c, d, overwrite_conflicts=False)
-            self.assertTrue(False)
-        except Exception as error:
-            self.assertEqual(str(error), 'Conflict at 1.1')
+        for setting_name, setting_value in six.iteritems(default_settings):
+            overridden_value = getattr(djoser_settings, setting_name)
+            try:
+                self.assertEqual(setting_value, overridden_value)
+            except AssertionError:
+                setting_value = import_string(setting_value)
+                self.assertEqual(setting_value, overridden_value)
+
+    @override_settings(DJOSER=dict(settings.DJOSER, **{'USE_HTML_EMAIL_TEMPLATES': True}))
+    def test_djoser_simple_setting_overriden(self):
+        from djoser.conf import settings as djoser_settings
+        self.assertTrue(djoser_settings.USE_HTML_EMAIL_TEMPLATES)
+
+
+    @override_settings(DJOSER=dict(settings.DJOSER, **{'SERIALIZERS': {'user': 'some.serializer'}}))
+    def test_djoser_dict_setting_overriden(self):
+        from djoser.conf import settings as djoser_settings
+        self.assertEqual(djoser_settings.SERIALIZERS['user'], 'some.serializer')
+
+    def test_djoser_settings_compat_method(self):
+        from djoser.conf import settings as djoser_settings
+        self.assertFalse(djoser_settings.get('USE_HTML_EMAIL_TEMPLATES'))
 
 
 class TestDjoserViewsSupportActionAttribute(restframework.APIViewTestCase):

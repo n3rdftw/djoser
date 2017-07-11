@@ -4,13 +4,15 @@ from django.contrib.auth.tokens import default_token_generator
 from django.contrib.sites.shortcuts import get_current_site
 from django.core.mail import EmailMultiAlternatives, EmailMessage
 from django.template import loader
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_text
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 
-from rest_framework import response, status, authtoken
+from rest_framework import authtoken
 from rest_framework_jwt.settings import api_settings
 
-from . import settings
+from djoser import constants
+from djoser.compat import get_user_email
+from djoser.conf import settings
 
 
 def encode_uid(pk):
@@ -22,13 +24,13 @@ def decode_uid(pk):
 
 
 def login_user(request, user):
-    token, _ = authtoken.models.Token.objects.get_or_create(user=user)
+    token, _ = settings.TOKEN_MODEL.objects.get_or_create(user=user)
     user_logged_in.send(sender=user.__class__, request=request, user=user)
     return token
 
 
 def logout_user(request):
-    authtoken.models.Token.objects.filter(user=request.user).delete()
+    settings.TOKEN_MODEL.objects.filter(user=request.user).delete()
     user_logged_out.send(
         sender=request.user.__class__, request=request, user=request.user
     )
@@ -61,7 +63,7 @@ class UserEmailFactoryBase(object):
         self.context_data = context
 
     @classmethod
-    def from_request(cls, request, user=None, from_email=None, **context):
+    def from_request(cls, request, user=None, from_email=None, protocol=None, **context):
         site = get_current_site(request)
         from_email = from_email or getattr(
             django_settings, 'DEFAULT_FROM_EMAIL', ''
@@ -72,7 +74,7 @@ class UserEmailFactoryBase(object):
             user=user or request.user,
             domain=django_settings.DJOSER.get('DOMAIN') or site.domain,
             site_name=django_settings.DJOSER.get('SITE_NAME') or site.name,
-            protocol='https' if request.is_secure() else 'http',
+            protocol=protocol or ('https' if request.is_secure() else 'http'),
             **context
         )
 
@@ -82,12 +84,16 @@ class UserEmailFactoryBase(object):
         subject = loader.render_to_string(self.subject_template_name, context)
         subject = ''.join(subject.splitlines())
 
+        user_email = get_user_email(self.user)
+        if user_email is None:
+            raise ValueError(constants.USER_WITHOUT_EMAIL_FIELD_ERROR)
+
         if self.plain_body_template_name:
             plain_body = loader.render_to_string(
                 self.plain_body_template_name, context
             )
             email_message = EmailMultiAlternatives(
-                subject, plain_body, self.from_email, [self.user.email]
+                subject, plain_body, self.from_email, [user_email]
             )
             if self.html_body_template_name:
                 html_body = loader.render_to_string(
@@ -99,7 +105,7 @@ class UserEmailFactoryBase(object):
                 self.html_body_template_name, context
             )
             email_message = EmailMessage(
-                subject, html_body, self.from_email, [self.user.email]
+                subject, html_body, self.from_email, [user_email]
             )
             email_message.content_subtype = 'html'
         return email_message
@@ -121,20 +127,24 @@ class UserEmailFactoryBase(object):
 class UserActivationEmailFactory(UserEmailFactoryBase):
     subject_template_name = 'activation_email_subject.txt'
     plain_body_template_name = 'activation_email_body.txt'
+    if settings.USE_HTML_EMAIL_TEMPLATES:
+        html_body_template_name = 'activation_email_body.html'
 
     def get_context(self):
         context = super(UserActivationEmailFactory, self).get_context()
-        context['url'] = settings.get('ACTIVATION_URL').format(**context)
+        context['url'] = settings.ACTIVATION_URL.format(**context)
         return context
 
 
 class UserPasswordResetEmailFactory(UserEmailFactoryBase):
     subject_template_name = 'password_reset_email_subject.txt'
     plain_body_template_name = 'password_reset_email_body.txt'
+    if settings.USE_HTML_EMAIL_TEMPLATES:
+        html_body_template_name = 'password_reset_email_body.html'
 
     def get_context(self):
         context = super(UserPasswordResetEmailFactory, self).get_context()
-        context['url'] = settings.get('PASSWORD_RESET_CONFIRM_URL').format(
+        context['url'] = settings.PASSWORD_RESET_CONFIRM_URL.format(
             **context
         )
         return context
@@ -143,3 +153,5 @@ class UserPasswordResetEmailFactory(UserEmailFactoryBase):
 class UserConfirmationEmailFactory(UserEmailFactoryBase):
     subject_template_name = 'confirmation_email_subject.txt'
     plain_body_template_name = 'confirmation_email_body.txt'
+    if settings.USE_HTML_EMAIL_TEMPLATES:
+        html_body_template_name = 'confirmation_email_body.html'
