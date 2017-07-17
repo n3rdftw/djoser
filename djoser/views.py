@@ -245,7 +245,6 @@ class ActivationView(utils.ActionViewMixin, generics.GenericAPIView):
         if settings.SEND_CONFIRMATION_EMAIL:
             email_factory = utils.UserConfirmationEmailFactory.from_request(
                 self.request, user=serializer.user)
-            email_factory.html_body_template_name = 'confirmation_email.html'
             email = email_factory.create()
             email.send()
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -279,7 +278,6 @@ class UserView(generics.RetrieveUpdateAPIView):
     permission_classes = (
         permissions.IsAuthenticated,
     )
-    queryset = User.objects.all()
 
     def get_object(self, *args, **kwargs):
         return self.request.user
