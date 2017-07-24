@@ -57,20 +57,16 @@ class RegistrationView(generics.CreateAPIView):
     _users = None
 
     def create(self, request, *args, **kwargs):
-        try:
-            email_field_name = get_user_email_field_name(User)
-            users = self.get_email_users(request.data.get(email_field_name))
-            for user in users:
-                serializer = self.get_serializer(instance=user)
-                if settings.RESEND_REGISTRATION_EMAIL:
-                    self.resend_registration_email(user)
-                headers = self.get_success_headers(serializer.data)
-            if not settings.REGISTRATION_SHOW_EMAIL_FOUND and users:
-                return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-        except User.DoesNotExist:
-            pass
-        response = super(RegistrationView, self).create(request, *args, **kwargs)
-        return response
+        email_field_name = get_user_email_field_name(User)
+        users = self.get_email_users(request.data.get(email_field_name))
+        for user in users:
+            serializer = self.get_serializer(instance=user)
+            if settings.RESEND_REGISTRATION_EMAIL:
+                self.resend_registration_email(user)
+            headers = self.get_success_headers(serializer.data)
+        if not settings.REGISTRATION_SHOW_EMAIL_FOUND and users:
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        return super(RegistrationView, self).create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         user = serializer.save()
