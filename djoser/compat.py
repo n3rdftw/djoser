@@ -1,9 +1,6 @@
 from djoser.conf import settings
 
-try:
-    from django.contrib.auth.password_validation import validate_password
-except ImportError:
-    from password_validation import validate_password
+__all__ = ['settings']
 
 
 def get_user_email(user):

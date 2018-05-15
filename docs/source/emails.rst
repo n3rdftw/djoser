@@ -1,19 +1,11 @@
 Emails
 ======
 
-There are few email templates which you may want to override:
+Explicit email support has been removed from djoser in 1.0.0.
+It didn't make sense to handle such responsibility in a package, which should
+simply provide an implementation of common authentication-related REST endpoints.
 
-* ``activation_email_body.txt``
-* ``activation_email_subject.txt``
-* ``password_reset_email_body.txt``
-* ``password_reset_email_subject.txt``
+Email support is now handled with the `django-templated-mail <https://github.com/sunscrapers/django-templated-mail>`_
+package.
 
-All of them have following context:
-
-* ``user``
-* ``domain``
-* ``site_name``
-* ``url``
-* ``uid``
-* ``token``
-* ``protocol``
+Email classes can be overridden using `EMAIL setting <http://djoser.readthedocs.io/en/latest/settings.html#email>`_

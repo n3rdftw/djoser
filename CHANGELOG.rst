@@ -5,7 +5,77 @@ Change Log
 This document records all notable changes to djoser.
 This project adheres to `Semantic Versioning <http://semver.org/>`_.
 
+---------------------
+`1.1.1`_ (2017-11-05)
+---------------------
 
+* Fix: Token Strategy breaks in all cases if djangorestframework-jwt not installed
+
+---------------------
+`1.1.0`_ (2017-11-05)
+---------------------
+
+* Add third party based authentication support
+* Add JWT token strategy for new authentication method
+* Add ``EMAIL`` setting to allow simpler email customization.
+* Add ``SOCIAL_AUTH_TOKEN_STRATEGY`` and ``SOCIAL_AUTH_ALLOWED_REDIRECT_URIS``
+  settings along new authentication method
+* Add documentation about new authentication method
+* Update documentation index into captioned sections for better readability
+
+
+---------------------
+`1.0.1`_ (2017-10-20)
+---------------------
+
+* Fix: Invalid URL for PasswordResetEmail context
+* Fix: Invalid serializer examples in docs
+
+---------------------
+`1.0.0`_ (2017-10-14)
+---------------------
+
+* **Breaking**: For Token-based and JWT authentication ``djoser.urls`` should be included in the URLconf as well as either ``djoser.urls.authtoken`` or ``djoser.urls.jwt``
+* Add JWT authentication support
+* Add/Update documentation about JWT
+* Add/Update/Fix tests where necessary
+* Add support for Django REST Framework 3.7
+* Drop support for Django REST Framework 3.6
+* Replace built-in email support with django-templated-mail
+* Refactor test configuration for better performance and organization
+* Refactor RootView to have better support for modular URLs
+* Update URLs to be slightly more RESTful
+* Update codebase with small syntax/formatting fixes
+* Update README/documentation to reflect on codebase changes
+* Move ``DOMAIN`` and ``SITE_NAME`` settings to django-templated-mail
+* Remove ``USE_HTML_EMAIL_TEMPLATES`` and ``ROOT_VIEW_URLS_MAPPING`` settings
+
+---------------------
+`0.7.0`_ (2017-09-01)
+---------------------
+
+* Add ``TOKEN_MODEL`` setting to allow third party apps to specify a custom token model
+* Add ``USER_EMAIL_FIELD_NAME`` setting as a compatibility solution in Django < 1.11
+* Add support for Django Password Validators
+* Add HTML templates for djoser emails
+* Add `flake8`_ integration to CI
+* Add `py.test`_ integration
+* Add Python 3.7 to CI
+* Update from coveralls to codecov
+* Update ``README`` to rST with uniform badges
+* Update ``djoser.views.PasswordResetView`` to allow non-database ``User.is_active``
+* Update docs on topics which have been added/modified since last release
+* Remove serializers manager, so the serializers in djoser are now accessed via dot notation
+* Remove support for DRF 3.4
+* Remove support for basic auth as authentication backend
+* Refactor djoser settings module for cleaner and more pythonic/djangonic solution
+* Refactor tests into multiple files and fix some minor issues
+* Refactor some parts of codebase for better readability
+* Slightly refactor/simplify parts of ``djoser.utils``
+* Fix all style issues reported by `flake8`_ in codebase
+* Fix security bug in ``djoser.views.UserView``
+
+---------------------
 `0.6.0`_ (2017-06-02)
 ---------------------
 
@@ -20,6 +90,7 @@ This project adheres to `Semantic Versioning <http://semver.org/>`_.
 * Slightly refactor use of ``Response`` in ``djoser/views.py``
 * Fix #190 - race condition for near-simultaneous sign-ups
 
+---------------------
 `0.5.4`_ (2017-01-27)
 ---------------------
 
@@ -29,7 +100,7 @@ List of changes:
 * Add ``djoser.utils.UserEmailFactoryBase`` test case
 * Fix dictionary syntax error
 
-
+---------------------
 `0.5.3`_ (2017-01-27)
 ---------------------
 
@@ -44,7 +115,7 @@ Besides that it's mostly codebase cleanup. List of changes:
   `#141 <https://github.com/sunscrapers/djoser/pull/141>`_
 * Cleanup ``setup.py`` and ``testproject/testapp/tests.py``
 
-
+---------------------
 `0.5.2`_ (2017-01-02)
 ---------------------
 
@@ -56,7 +127,7 @@ support for DRF 3.5. There are also some changes in documentation. List of chang
 * Update required Django version to >= 1.7
 * Update docs with tweaks on encoding and names
 
-
+---------------------
 `0.5.1`_ (2016-09-01)
 ---------------------
 
@@ -73,7 +144,7 @@ refactor, and other various contributions. List of changes:
 * Update ``.gitignore``
 * Update tests
 
-
+---------------------
 `0.5.0`_ (2016-06-15)
 ---------------------
 
@@ -86,7 +157,7 @@ Python / Django / DRF versions. List of changes:
 * Update ``HTTP_200_OK`` to ``HTTP_204_NO_CONTENT`` where appropriate
 * Remove compatibility for Python < 2.7, Django < 1.7, and DRF < 3.3
 
-
+---------------------
 `0.4.3`_ (2016-03-01)
 ---------------------
 
@@ -95,7 +166,7 @@ This release provides few bugfixes / UX improvements. List of changes:
 * Add human readable error message when incorrect uid is provided
 * Fix user being active, before activating his account via email
 
-
+---------------------
 `0.4.2`_ (2016-02-24)
 ---------------------
 
@@ -104,7 +175,7 @@ This release adds a new feature - custom password validators. List of changes:
 * Add support for ``/register/`` and ``/password/reset/confirm/`` arbitrary
   password validators, with PASSWORD_VALIDATORS djoser setting field
 
-
+---------------------
 `0.4.1`_ (2016-02-24)
 ---------------------
 
@@ -117,7 +188,7 @@ few bugfixes / documentation updates. List of changes:
 * Fix `#92 <https://github.com/sunscrapers/djoser/issues/92>`_
 * Fix `#100 <https://github.com/sunscrapers/djoser/pull/100>`_
 
-
+---------------------
 `0.4.0`_ (2015-09-29)
 ---------------------
 
@@ -128,6 +199,8 @@ few bugfixes / documentation updates. List of changes:
 
 
 .. _pipenv: https://github.com/kennethreitz/pipenv
+.. _flake8: http://flake8.pycqa.org
+.. _py.test: https://pytest.org/
 .. _GitHub Releases: https://github.com/sunscrapers/djoser/releases
 .. _djangorestframework-jwt: https://github.com/GetBlimp/django-rest-framework-jwt
 .. _0.4.0: https://github.com/sunscrapers/djoser/compare/1cf11e8...0.4.0
@@ -139,4 +212,8 @@ few bugfixes / documentation updates. List of changes:
 .. _0.5.2: https://github.com/sunscrapers/djoser/compare/0.5.1...0.5.2
 .. _0.5.3: https://github.com/sunscrapers/djoser/compare/0.5.2...0.5.3
 .. _0.5.4: https://github.com/sunscrapers/djoser/compare/0.5.3...0.5.4
-.. _0.6.0: https://github.com/sunscrapers/djoser/compare/0.5.4...master
+.. _0.6.0: https://github.com/sunscrapers/djoser/compare/0.5.4...0.6.0
+.. _0.7.0: https://github.com/sunscrapers/djoser/compare/0.6.0...0.7.0
+.. _1.0.0: https://github.com/sunscrapers/djoser/compare/0.6.0...1.0.0
+.. _1.0.1: https://github.com/sunscrapers/djoser/compare/1.0.0...1.0.1
+.. _1.1.0: https://github.com/sunscrapers/djoser/compare/1.0.1...1.1.0

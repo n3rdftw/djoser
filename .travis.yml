@@ -1,11 +1,35 @@
 sudo: false
+
 language: python
 python:
   - "2.7"
-  - "3.3"
   - "3.4"
   - "3.5"
-  - "3.6"
+
+env:
+  - DJANGO=1.10
+  - DJANGO=1.11
+  - DJANGO=master
+
+matrix:
+  fast_finish: true
+  include:
+    - python: "3.6"
+      env: DJANGO=1.11
+    - python: "3.6"
+      env: DJANGO=master
+    - python: "3.7-dev"
+      env: DJANGO=1.11
+    - python: "3.7-dev"
+      env: DJANGO=master
+  exclude:
+    - python: "2.7"
+      env: DJANGO=master
+    - python: "3.4"
+      env: DJANGO=master
+  allow_failures:
+    - python: "3.7-dev"
+    - env: DJANGO=master
 
 install:
   - travis_retry pip install -U tox-travis
@@ -14,5 +38,5 @@ script:
   - tox
 
 after_success:
-  - pip install coveralls==1.1
-  - coveralls
+  - travis_retry pip install -U codecov
+  - codecov

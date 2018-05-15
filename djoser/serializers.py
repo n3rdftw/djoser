@@ -1,14 +1,13 @@
 from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core import exceptions as django_exceptions
 from django.db import IntegrityError, transaction
-from django.utils import six
-from django.utils.module_loading import import_string
 
 from rest_framework import exceptions, serializers
 
 from djoser import constants, utils
-from djoser.compat import get_user_email, validate_password
+from djoser.compat import get_user_email, get_user_email_field_name
 from djoser.conf import settings
-
 
 User = get_user_model()
 
@@ -23,17 +22,16 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = (User.USERNAME_FIELD,)
 
     def update(self, instance, validated_data):
-        email = get_user_email(instance)
-        with transaction.atomic():
-            instance = super(UserSerializer, self).update(instance, validated_data)
-            if settings.SEND_ACTIVATION_EMAIL and validated_data.get(settings.USER_EMAIL_FIELD_NAME) and email != get_user_email(instance):
+        email_field = get_user_email_field_name(User)
+        if settings.SEND_ACTIVATION_EMAIL and email_field in validated_data:
+            instance_email = get_user_email(instance)
+            if instance_email != validated_data[email_field]:
                 instance.is_active = False
                 instance.save(update_fields=['is_active'])
+        return super(UserSerializer, self).update(instance, validated_data)
 
-        return instance
 
-
-class UserRegistrationSerializer(serializers.ModelSerializer):
+class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
         style={'input_type': 'password'},
         write_only=True
@@ -49,17 +47,22 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             User.USERNAME_FIELD, User._meta.pk.name, 'password',
         )
 
-    def validate_password(self, value):
-        validate_password(value)
-        return value
+    def validate(self, attrs):
+        user = User(**attrs)
+        password = attrs.get('password')
+
+        try:
+            validate_password(password, user)
+        except django_exceptions.ValidationError as e:
+            raise serializers.ValidationError({'password': list(e.messages)})
+
+        return attrs
 
     def create(self, validated_data):
         try:
             user = self.perform_create(validated_data)
         except IntegrityError:
-            raise serializers.ValidationError(
-                self.error_messages['cannot_create_user']
-            )
+            self.fail('cannot_create_user')
 
         return user
 
@@ -72,49 +75,53 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return user
 
 
-class LoginSerializer(serializers.Serializer):
+class TokenCreateSerializer(serializers.Serializer):
     password = serializers.CharField(
         required=False, style={'input_type': 'password'}
     )
 
     default_error_messages = {
-        'inactive_account': constants.INACTIVE_ACCOUNT_ERROR,
         'invalid_credentials': constants.INVALID_CREDENTIALS_ERROR,
+        'inactive_account': constants.INACTIVE_ACCOUNT_ERROR,
     }
 
     def __init__(self, *args, **kwargs):
-        super(LoginSerializer, self).__init__(*args, **kwargs)
+        super(TokenCreateSerializer, self).__init__(*args, **kwargs)
         self.user = None
-        self.fields[User.USERNAME_FIELD] = serializers.CharField(required=False)
+        self.fields[User.USERNAME_FIELD] = serializers.CharField(
+            required=False
+        )
 
     def validate(self, attrs):
         self.user = authenticate(
             username=attrs.get(User.USERNAME_FIELD),
             password=attrs.get('password')
         )
-        if self.user:
-            if not self.user.is_active:
-                raise serializers.ValidationError(
-                    self.error_messages['inactive_account']
-                )
-            return attrs
-        else:
-            raise serializers.ValidationError(
-                self.error_messages['invalid_credentials']
-            )
+
+        self._validate_user_exists(self.user)
+        self._validate_user_is_active(self.user)
+        return attrs
+
+    def _validate_user_exists(self, user):
+        if not user:
+            self.fail('invalid_credentials')
+
+    def _validate_user_is_active(self, user):
+        if not user.is_active:
+            self.fail('inactive_account')
 
 
 class PasswordResetSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
-    default_error_messages = {
-        'email_not_found': constants.EMAIL_NOT_FOUND
-    }
+    default_error_messages = {'email_not_found': constants.EMAIL_NOT_FOUND}
 
     def validate_email(self, value):
-        if settings.PASSWORD_RESET_SHOW_EMAIL_NOT_FOUND and not self.context['view'].get_users(value):
-            raise serializers.ValidationError(self.error_messages['email_not_found'])
-        return value
+        users = self.context['view'].get_users(value)
+        if settings.PASSWORD_RESET_SHOW_EMAIL_NOT_FOUND and not users:
+            self.fail('email_not_found')
+        else:
+            return value
 
 
 class UidAndTokenSerializer(serializers.Serializer):
@@ -130,35 +137,46 @@ class UidAndTokenSerializer(serializers.Serializer):
         try:
             uid = utils.decode_uid(value)
             self.user = User.objects.get(pk=uid)
-        except (User.DoesNotExist, ValueError, TypeError, OverflowError) as error:
-            raise serializers.ValidationError(self.error_messages['invalid_uid'])
+        except (User.DoesNotExist, ValueError, TypeError, OverflowError):
+            self.fail('invalid_uid')
+
         return value
 
     def validate(self, attrs):
         attrs = super(UidAndTokenSerializer, self).validate(attrs)
-        if not self.context['view'].token_generator.check_token(self.user, attrs['token']):
-            raise serializers.ValidationError(self.error_messages['invalid_token'])
-        return attrs
+        is_token_valid = self.context['view'].token_generator.check_token(
+            self.user, attrs['token']
+        )
+        if is_token_valid:
+            return attrs
+        else:
+            self.fail('invalid_token')
 
 
 class ActivationSerializer(UidAndTokenSerializer):
-    default_error_messages = {
-        'stale_token': constants.STALE_TOKEN_ERROR,
-    }
+    default_error_messages = {'stale_token': constants.STALE_TOKEN_ERROR}
 
     def validate(self, attrs):
         attrs = super(ActivationSerializer, self).validate(attrs)
-        if self.user.is_active:
-            raise exceptions.PermissionDenied(self.error_messages['stale_token'])
-        return attrs
+        if not self.user.is_active:
+            return attrs
+        raise exceptions.PermissionDenied(self.error_messages['stale_token'])
 
 
 class PasswordSerializer(serializers.Serializer):
     new_password = serializers.CharField(style={'input_type': 'password'})
 
-    def validate_new_password(self, value):
-        validate_password(value)
-        return value
+    def validate(self, attrs):
+        user = self.context['request'].user or self.user
+        assert user is not None
+
+        try:
+            validate_password(attrs['new_password'], user)
+        except django_exceptions.ValidationError as e:
+            raise serializers.ValidationError({
+                'new_password': list(e.messages)
+            })
+        return super(PasswordSerializer, self).validate(attrs)
 
 
 class PasswordRetypeSerializer(PasswordSerializer):
@@ -170,9 +188,10 @@ class PasswordRetypeSerializer(PasswordSerializer):
 
     def validate(self, attrs):
         attrs = super(PasswordRetypeSerializer, self).validate(attrs)
-        if attrs['new_password'] != attrs['re_new_password']:
-            raise serializers.ValidationError(self.error_messages['password_mismatch'])
-        return attrs
+        if attrs['new_password'] == attrs['re_new_password']:
+            return attrs
+        else:
+            self.fail('password_mismatch')
 
 
 class CurrentPasswordSerializer(serializers.Serializer):
@@ -183,45 +202,59 @@ class CurrentPasswordSerializer(serializers.Serializer):
     }
 
     def validate_current_password(self, value):
-        if not self.context['request'].user.check_password(value):
-            raise serializers.ValidationError(self.error_messages['invalid_password'])
-        return value
+        is_password_valid = self.context['request'].user.check_password(value)
+        if is_password_valid:
+            return value
+        else:
+            self.fail('invalid_password')
 
 
 class SetPasswordSerializer(PasswordSerializer, CurrentPasswordSerializer):
     pass
 
 
-class SetPasswordRetypeSerializer(PasswordRetypeSerializer, CurrentPasswordSerializer):
+class SetPasswordRetypeSerializer(PasswordRetypeSerializer,
+                                  CurrentPasswordSerializer):
     pass
 
 
-class PasswordResetConfirmSerializer(UidAndTokenSerializer, PasswordSerializer):
+class PasswordResetConfirmSerializer(UidAndTokenSerializer,
+                                     PasswordSerializer):
     pass
 
 
-class PasswordResetConfirmRetypeSerializer(UidAndTokenSerializer, PasswordRetypeSerializer):
+class PasswordResetConfirmRetypeSerializer(UidAndTokenSerializer,
+                                           PasswordRetypeSerializer):
     pass
 
 
-class SetUsernameSerializer(serializers.ModelSerializer, CurrentPasswordSerializer):
+class UserDeleteSerializer(CurrentPasswordSerializer):
+    pass
+
+
+class SetUsernameSerializer(serializers.ModelSerializer,
+                            CurrentPasswordSerializer):
 
     class Meta(object):
         model = User
-        fields = (
-            User.USERNAME_FIELD,
-            'current_password',
-        )
+        fields = (User.USERNAME_FIELD, 'current_password')
 
     def __init__(self, *args, **kwargs):
+        """
+        This method should probably be replaced by a better solution.
+        Its purpose is to replace USERNAME_FIELD with 'new_' + USERNAME_FIELD
+        so that the new field is being assigned a field for USERNAME_FIELD
+        """
         super(SetUsernameSerializer, self).__init__(*args, **kwargs)
-        self.fields['new_' + User.USERNAME_FIELD] = self.fields[User.USERNAME_FIELD]
-        del self.fields[User.USERNAME_FIELD]
+        username_field = User.USERNAME_FIELD
+        self.fields['new_' + username_field] = self.fields.pop(username_field)
 
 
 class SetUsernameRetypeSerializer(SetUsernameSerializer):
     default_error_messages = {
-        'username_mismatch': constants.USERNAME_MISMATCH_ERROR.format(User.USERNAME_FIELD),
+        'username_mismatch': constants.USERNAME_MISMATCH_ERROR.format(
+            User.USERNAME_FIELD
+        ),
     }
 
     def __init__(self, *args, **kwargs):
@@ -232,8 +265,9 @@ class SetUsernameRetypeSerializer(SetUsernameSerializer):
         attrs = super(SetUsernameRetypeSerializer, self).validate(attrs)
         new_username = attrs[User.USERNAME_FIELD]
         if new_username != attrs['re_new_' + User.USERNAME_FIELD]:
-            raise serializers.ValidationError(self.error_messages['username_mismatch'].format(User.USERNAME_FIELD))
-        return attrs
+            self.fail('username_mismatch')
+        else:
+            return attrs
 
 
 class TokenSerializer(serializers.ModelSerializer):
@@ -241,27 +275,4 @@ class TokenSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = settings.TOKEN_MODEL
-        fields = (
-            'auth_token',
-        )
-
-
-class SerializersManager(object):
-    def __init__(self, serializer_confs):
-        self.serializers = {}
-        for serializer_name, serializer in six.iteritems(serializer_confs.copy()):
-            if isinstance(serializer, six.string_types):
-                serializer = import_string(serializer)
-            self.serializers[serializer_name] = serializer
-
-    def get(self, serializer_name):
-        try:
-            return self.serializers[serializer_name]
-        except KeyError:
-            raise Exception("Try to use serializer name '%s' that is not one of: %s" % (
-                serializer_name,
-                tuple(settings.SERIALIZERS.keys())
-            ))
-
-
-serializers_manager = SerializersManager(settings.SERIALIZERS)
+        fields = ('auth_token',)

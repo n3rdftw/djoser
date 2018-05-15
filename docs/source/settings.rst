@@ -6,29 +6,11 @@ You may optionally provide ``DJOSER`` settings:
 .. code-block:: python
 
     DJOSER = {
-        'DOMAIN': 'frontend.com',
-        'SITE_NAME': 'Frontend',
         'PASSWORD_RESET_CONFIRM_URL': '#/password/reset/confirm/{uid}/{token}',
         'ACTIVATION_URL': '#/activate/{uid}/{token}',
         'SEND_ACTIVATION_EMAIL': True,
         'SERIALIZERS': {},
     }
-
-DOMAIN
-------
-
-Domain of your frontend app. If not provided, domain of current site will be
-used.
-
-**Required**: ``False``
-
-SITE_NAME
----------
-
-Name of your frontend app. If not provided, name of current site will be
-used.
-
-**Required**: ``False``
 
 PASSWORD_RESET_CONFIRM_URL
 --------------------------
@@ -121,7 +103,7 @@ USER_EMAIL_FIELD_NAME
 
 Determines which field in ``User`` model is used for email in versions of Django
 before 1.11. In Django 1.11 and greater value of this setting is ignored and
-value provided by `User.get_email_field_name` is used.
+value provided by ``User.get_email_field_name`` is used.
 This setting will be dropped when Django 1.8 LTS goes EOL.
 
 **Default**: ``'email'``
@@ -152,8 +134,9 @@ Points to which token model should be used for authentication.
 SERIALIZERS
 -----------
 
-This dictionary is used to update the defaults, so by providing,
-let's say, one key, all the others will still be used.
+Dictionary which maps djoser serializer names to paths to serializer classes.
+This setting provides a way to easily override given serializer(s) - it's is used
+to update the defaults, so by providing, e.g. one key, all the others will stay default.
 
 **Examples**
 
@@ -169,7 +152,6 @@ let's say, one key, all the others will still be used.
 
     {
         'activation': 'djoser.serializers.ActivationSerializer',
-        'login': 'djoser.serializers.LoginSerializer',
         'password_reset': 'djoser.serializers.PasswordResetSerializer',
         'password_reset_confirm': 'djoser.serializers.PasswordResetConfirmSerializer',
         'password_reset_confirm_retype': 'djoser.serializers.PasswordResetConfirmRetypeSerializer',
@@ -177,23 +159,49 @@ let's say, one key, all the others will still be used.
         'set_password_retype': 'djoser.serializers.SetPasswordRetypeSerializer',
         'set_username': 'djoser.serializers.SetUsernameSerializer',
         'set_username_retype': 'djoser.serializers.SetUsernameRetypeSerializer',
-        'user_registration': 'djoser.serializers.UserRegistrationSerializer',
+        'user_create': 'djoser.serializers.UserCreateSerializer',
+        'user_delete': 'djoser.serializers.UserDeleteSerializer',
         'user': 'djoser.serializers.UserSerializer',
         'token': 'djoser.serializers.TokenSerializer',
+        'token_create': 'djoser.serializers.TokenCreateSerializer',
     }
 
-USE_HTML_EMAIL_TEMPLATES
-------------------------
+EMAIL
+-----
 
-Boolean flag which indicates whether djoser email factories should use plaintext
-or HTML body templates.
+Dictionary which maps djoser email names to paths to email classes.
+Same as in case of ``SERIALIZERS`` it allows partial override.
 
-+-----------------------------------+-----------------------------------+------------------------------------+
-| Factory                           | Plaintext template                | HTML template                      |
-+===================================+===================================+====================================+
-| ``UserActivationEmailFactory``    | ``activation_email_body.txt``     | ``activation_email_body.html``     |
-+-----------------------------------+-----------------------------------+------------------------------------+
-| ``UserPasswordResetEmailFactory`` | ``password_reset_email_body.txt`` | ``password_reset_email_body.html`` |
-+-----------------------------------+-----------------------------------+------------------------------------+
-| ``UserConfirmationEmailFactory``  | ``confirmation_email_body.txt``   | ``confirmation_email_body.html``   |
-+-----------------------------------+-----------------------------------+------------------------------------+
+**Examples**
+
+.. code-block:: python
+
+    {
+        'activation': 'myapp.email.AwesomeActivationEmail',
+    }
+
+**Default**:
+
+.. code-block:: python
+
+    {
+        'activation': 'djoser.email.ActivationEmail',
+        'confirmation': 'djoser.email.ConfirmationEmail',
+        'password_reset': 'djoser.email.PasswordResetEmail',
+    }
+
+SOCIAL_AUTH_TOKEN_STRATEGY
+--------------------------
+
+String path to class responsible for token strategy used by social authentication.
+
+**Example**: ``'myapp.token.MyStrategy'``
+**Default**: ``'djoser.social.token.jwt.TokenStrategy'``
+
+SOCIAL_AUTH_ALLOWED_REDIRECT_URIS
+---------------------------------
+
+List of allowed redirect URIs for social authentication.
+
+**Example**: ``['https://auth.example.com']``
+**Default**: ``[]``
