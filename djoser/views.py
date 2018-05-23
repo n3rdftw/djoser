@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
 from django.urls.exceptions import NoReverseMatch
+from django.db.models import Q
 
 from rest_framework import generics, permissions, status, views
 from rest_framework.response import Response
@@ -59,8 +60,7 @@ class UserCreateView(generics.CreateAPIView):
     _users = None
 
     def create(self, request, *args, **kwargs):
-        email_field_name = get_user_email_field_name(User)
-        users = self.get_email_users(request.data.get(email_field_name))
+        users = self.get_users()
         for user in users:
             serializer = self.get_serializer(instance=user)
             if settings.RESEND_REGISTRATION_EMAIL:
@@ -82,7 +82,25 @@ class UserCreateView(generics.CreateAPIView):
             settings.EMAIL.activation(self.request, context).send(to)
         elif settings.SEND_CONFIRMATION_EMAIL:
             settings.EMAIL.confirmation(self.request, context).send(to)
-            
+
+    def get_users(self):
+        if self._users is None:
+            email_field_name = get_user_email_field_name(User)
+            email = self.request.data.get(email_field_name)
+            username = self.request.data.get(User.USERNAME_FIELD)
+            email_users_kwargs = {
+                email_field_name + '__iexact': email,
+            }
+            username_users_kwargs = {
+                User.USERNAME_FIELD + '__iexact': username,
+            }
+            email_users_filter = Q(**email_users_kwargs)
+            username_users_filter = Q(**username_users_kwargs)
+            email_users = User._default_manager.filter(
+                username_users_filter | email_users_filter)
+            self._users = [u for u in email_users if u.has_usable_password()]
+        return self._users
+
     def get_email_users(self, email):
         if self._users is None:
             email_field_name = get_user_email_field_name(User)
@@ -92,6 +110,14 @@ class UserCreateView(generics.CreateAPIView):
             email_users = User._default_manager.filter(**email_users_kwargs)
             self._users = [u for u in email_users if u.has_usable_password()]
         return self._users
+
+    def resend_registration_email(self, user):
+        context = {'user': user}
+        to = [get_user_email(user)]
+        if user.is_active:
+            settings.EMAIL.password_reset(self.request, context).send(to)
+        else:
+            settings.EMAIL.activation(self.request, context).send(to)
 
 
 class UserDeleteView(generics.CreateAPIView):
