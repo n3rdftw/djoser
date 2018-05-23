@@ -75,7 +75,6 @@ class UserCreateView(generics.CreateAPIView):
         signals.user_registered.send(
             sender=self.__class__, user=user, request=self.request
         )
-
         context = {'user': user}
         to = [get_user_email(user)]
         if settings.SEND_ACTIVATION_EMAIL:
@@ -98,16 +97,6 @@ class UserCreateView(generics.CreateAPIView):
             username_users_filter = Q(**username_users_kwargs)
             email_users = User._default_manager.filter(
                 username_users_filter | email_users_filter)
-            self._users = [u for u in email_users if u.has_usable_password()]
-        return self._users
-
-    def get_email_users(self, email):
-        if self._users is None:
-            email_field_name = get_user_email_field_name(User)
-            email_users_kwargs = {
-                email_field_name + '__iexact': email,
-            }
-            email_users = User._default_manager.filter(**email_users_kwargs)
             self._users = [u for u in email_users if u.has_usable_password()]
         return self._users
 
